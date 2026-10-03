@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Рыбная Игровая (Catwar Style)</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #1a1a1a; color: #e0e0e0; margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        
+        /* Авторизация и Создание персонажа */
+        .auth-container { background: #2d2d2d; padding: 30px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.7); width: 100%; max-width: 450px; text-align: center; border: 1px solid #444; }
+        .auth-container h2 { margin-top: 0; color: #ffffff; font-size: 24px; }
+        .auth-form { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; }
+        .auth-form input, .auth-form select { padding: 12px; border-radius: 6px; border: 1px solid #555; background: #1a1a1a; color: #fff; font-size: 14px; }
+        .auth-form button { padding: 12px; border: none; border-radius: 6px; background: #4a4a4a; color: white; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 15px; }
+        .auth-form button:hover { background: #626262; }
+        .auth-toggle { margin-top: 15px; font-size: 13px; color: #aaa; cursor: pointer; text-decoration: underline; }
+        .fish-options { display: flex; justify-content: space-around; gap: 10px; margin: 10px 0; }
+        .fish-option { border: 2px solid #555; padding: 10px; border-radius: 8px; cursor: pointer; flex: 1; text-align: center; background: #222; }
+        .fish-option.selected { border-color: #00bcd4; background: #333; }
+        .fish-option div { font-size: 32px; }
+
+        /* Игровой интерфейс */
+        .game-interface { display: none; width: 100%; max-width: 1200px; background: #2d2d2d; border-radius: 12px; padding: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.8); border: 1px solid #444; }
+        .game-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #444; padding-bottom: 15px; margin-bottom: 15px; }
+        .game-title { font-size: 22px; font-weight: bold; color: #ffffff; }
+        
+        .logout-btn, .profile-btn { padding: 8px 16px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .profile-btn { background: #4a4a4a; color: white; margin-right: 10px; border: 1px solid #666; }
+        .profile-btn:hover { background: #5a5a5a; }
+        .logout-btn { background: #aa3a3a; color: white; }
+        .logout-btn:hover { background: #c54444; }
+
+        .game-layout { display: flex; gap: 20px; flex-wrap: wrap; }
+        
+        /* Локация и Большая Сетка */
+        .game-area { flex: 2; min-width: 450px; }
+        .location-banner { background: #444; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 18px; margin-bottom: 15px; color: #fff; border: 1px solid #555; }
+        
+        /* Сетка перемещения 10x10 */
+        .grid-map { display: grid; grid-template-columns: repeat(10, 1fr); grid-template-rows: repeat(10, 1fr); gap: 4px; background: #1a1a1a; padding: 8px; border-radius: 8px; aspect-ratio: 1; border: 3px solid #444; }
+        .grid-cell { background: #262626; border-radius: 4px; display: flex; justify-content: center; align-items: center; font-size: 24px; cursor: pointer; transition: background 0.2s; position: relative; user-select: none; }
+        .grid-cell:hover { background: #363636; }
+        .grid-cell.portal-cell::after { content: "🚪"; font-size: 12px; position: absolute; bottom: 2px; right: 2px; }
+
+        /* Таймер действия на клетке */
+        .timer-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; font-size: 12px; color: #fff; font-weight: bold; border-radius: 4px; }
+
+        /* Панели управления */
+        .sidebar { flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 15px; }
+        .panel-box { background: #222; border-radius: 8px; padding: 15px; border: 1px solid #444; }
+        .panel-box h3 { margin-top: 0; margin-bottom: 12px; font-size: 15px; color: #fff; border-bottom: 1px solid #444; padding-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        /* Статусы персонажа */
+        .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 5px; }
+        .status-item { background: #1a1a1a; padding: 8px; border-radius: 6px; border: 1px solid #333; font-size: 13px; display: flex; justify-content: space-between; }
+        .status-item span { color: #aaa; }
+        .status-item strong { color: #fff; }
+
+        /* Навыки */
+        .skill-item { margin-bottom: 12px; }
+        .skill-info { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+        .skill-bar-bg { background: #1a1a1a; border-radius: 8px; height: 10px; width: 100%; overflow: hidden; border: 1px solid #333; }
+        .skill-bar-fill { height: 100%; width: 0%; transition: width 0.3s; background: #666; }
+        .stamina-fill { background: #4a90e2; }
+        .mindfulness-fill { background: #2ca02c; }
+
+        /* Действия */
+        .actions-list { display: flex; flex-direction: column; gap: 8px; }
+        .action-btn { width: 100%; padding: 10px; border: none; border-radius: 6px; background: #3a3a3a; color: white; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 13px; text-align: left; }
+        .action-btn:hover { background: #4a4a4a; }
+        .action-btn:disabled { background: #222; color: #555; cursor: not-allowed; border: 1px solid #333; }
+        .action-btn.portal-btn { background: #5c3c75; border: 1px solid #7b529c; }
+        .action-btn.portal-btn:hover { background: #6e488c; }
+
+        /* Модальные окна */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 100; }
+        .custom-modal { background: #2d2d2d; border-radius: 12px; width: 90%; max-width: 450px; padding: 25px; border: 1px solid #555; position: relative; }
+        .close-modal { position: absolute; top: 15px; right: 15px; background: none; border: none; color: #aaa; font-size: 24px; cursor: pointer; }
+        .profile-avatar { font-size: 64px; text-align: center; margin-bottom: 15px; background: #1a1a1a; padding: 15px; border-radius: 50%; width: 100px; height: 100px; margin: 0 auto 15px auto; display: flex; justify-content: center; align-items: center; border: 2px solid #555; }
+        .profile-details { text-align: left; font-size: 14px; display: flex; flex-direction: column; gap: 8px; margin-top: 15px; background: #1a1a1a; padding: 15px; border-radius: 8px; }
+        .profile-details div { display: flex; justify-content: space-between; border-bottom: 1px solid #2d2d2d; padding-bottom: 4px; }
+        .profile-details span { color: #aaa; }
+        
+        #actionProgressBox { display: none; background: #333; padding: 10px; border-radius: 6px; text-align: center; font-size: 13px; margin-top: 10px; border: 1px solid #444; }
+    </style>
+</head>
+<body>
+
+    <!-- ОКНО АВТОРИЗАЦИИ / КОДА ПОДТВЕРЖДЕНИЯ -->
+    <div id="authContainer" class="auth-container">
+        <h2 id="authTitle">Вход в Игру</h2>
+        <form id="authForm" class="auth-form">
+            <input type="email" id="authEmail" placeholder="Электронная почта" required>
+            <input type="password" id="authPassword" placeholder="Пароль" required>
+            <!-- Блок для ввода кода верификации (эмуляция или реальный) -->
+            <input type="text" id="authCode" placeholder="Код подтверждения из письма" style="display: none;">
+            <button type="submit" id="authSubmitBtn">Войти</button>
+        </form>
+        <div id="authToggleBtn" class="auth-toggle">Ещё нет аккаунта? Зарегистрироваться</div>
+    </div>
+
+    <!-- ОКНО СОЗДАНИЯ РЫБЫ -->
+    <div id="creationContainer" class="auth-container" style="display: none;">
+        <h2>Создание Персонажа</h2>
+        <form id="creationForm" class="auth-form">
+            <input type="text" id="fishName" placeholder="Имя вашей рыбки" required maxlength="14">
+            <select id="fishGender" required>
+                <option value="" disabled selected>Выберите пол</option>
+                <option value="самец">Самец</option>
+                <option value="самка">Самка</option>
+            </select>
+            <label style="font-size: 13px; color: #aaa; text-align: left; margin-top: 5px;">Выберите вид:</label>
+            <div class="fish-options">
+                <div class="fish-option selected" onclick="selectFishType('koi', '🐟')">
+                    <div id="iconKoi">🐟</div>
+                    <span>Кои</span>
+                </div>
+                <div class="fish-option" onclick="selectFishType('som', '🐡')">
+                    <div id="iconSom">🐡</div>
+                    <span>Сом</span>
+                </div>
+            </div>
+            <button type="submit">Создать рыбу и начать</button>
+        </form>
+    </div>
+
+    <!-- ГЛАВНЫЙ ИГРОВОЙ ЭКРАН -->
+    <div id="gameInterface" class="game-interface">
+        <div class="game-header">
+            <div class="game-title">Рыбная Игровая</div>
+            <div>
+                <button class="profile-btn" onclick="openProfile()">👤 Профиль</button>
+                <button class="logout-btn" id="logoutBtn">Выйти</button>
+            </div>
+        </div>
+
+        <div class="game-layout">
+            <!-- Локация и 10x10 сетка -->
+            <div class="game-area">
+                <div id="locationName" class="location-banner">Загрузка...</div>
+                <div id="gridMap" class="grid-map"></div>
+            </div>
+
+            <!-- Боковая панель -->
+            <div class="sidebar">
+                <!-- Жизненные показатели -->
+                <div class="panel-box">
+                    <h3>❤️ Жизненные показатели</h3>
+                    <div class="status-grid">
+                        <div class="status-item"><span>Здоровье:</span><strong id="statHealth">100%</strong></div>
+                        <div class="status-item"><span>Голод:</span><strong id="statHunger">100%</strong></div>
+                        <div class="status-item"><span>Усталость:</span><strong id="statEnergy">100%</strong></div>
+                        <div class="status-item"><span>Кислород:</span><strong id="statOxygen">100%</strong></div>
+                    </div>
+                </div>
+
+                <!-- Навыки и Уровни -->
+                <div class="panel-box">
+                    <h3>📊 Навыки (Уровни)</h3>
+                    <div class="skill-item">
+                        <div class="skill-info">
+                            <span>Выносливость (Ур. <span id="staminaLvl">1</span>)</span>
+                            <span id="staminaPoints">0/15</span>
+                        </div>
+                        <div class="skill-bar-bg">
+                            <div id="staminaBar" class="skill-bar-fill stamina-fill"></div>
+                        </div>
+                    </div>
+                    <div class="skill-item">
+                        <div class="skill-info">
+                            <span>Внимательность (Ур. <span id="mindfulnessLvl">1</span>)</span>
+                            <span id="mindfulnessPoints">0/15</span>
+                        </div>
+                        <div class="skill-bar-bg">
+                            <div id="mindfulnessBar" class="skill-bar-fill mindfulness-fill"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Панель действий -->
+                <div class="panel-box">
+                    <h3>⚡ Доступные Действия</h3>
+                    <div class="actions-list">
+                        <button id="btnSwim" class="action-btn" onclick="startTraining('stamina')">🏊‍♂️ Плавать (3 мин / -15% бодрости)</button>
+                        <button id="btnLook" class="action-btn" onclick="startTraining('mindfulness')">👀 Присмотреться (3 мин / -5% бодрости)</button>
+                        
+                        <!-- Локационные уникальные действия -->
+                        <button id="btnRest" class="action-btn" style="display:none;" onclick="startRest()">💤 Отдохнуть (30 сек / +5% бодрости)</button>
+                        <button id="btnSearchFood" class="action-btn" style="display:none;" onclick="searchFood()">🔍 Искать остатки корма (<60% голода)</button>
+                        <button id="btnEatFood" class="action-btn" style="display:none;" onclick="eatFood()">🍒 Поесть корм (раз в 20 часов)</button>
+                    </div>
+                    <div id="actionProgressBox">Осталось времени: <span id="actionTimer">00:00</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ДИАЛОГОВОЕ ОКНО ДЛЯ ПЕРЕХОДА МЕЖДУ ЛОКАЦИЯМИ -->
+    <div id="portalModal" class="modal-overlay">
+        <div class="custom-modal" style="text-align: center;">
+            <h3 id="portalQueryText">Перейти в локацию?</h3>
+            <div style="display: flex; gap: 15px; justify-content: center; margin-top: 20px;">
+                <button class="profile-btn" style="background:#222; margin:0;" onclick="confirmLocationSwitch()">Да</button>
+                <button class="logout-btn" style="background:#444;" onclick="closePortalModal()">Нет</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- МОДАЛЬНОЕ ОКНО ПРОФИЛЯ -->
+    <div id="profileModal" class="modal-overlay">
+        <div class="custom-modal">
+            <button class="close-modal" onclick="closeProfile()">&times;</button>
+            <div id="profileAvatar" class="profile-avatar">🐟</div>
+            <h3 style="text-align:center; margin:0;" id="profNameTitle">Имя Рыбы</h3>
+            
+            <div class="profile-details">
+                <div><span>Имя:</span> <strong id="profName">-</strong></div>
+                <div><span>Пол:</span> <strong id="profGender">-</strong></div>
+                <div><span>Вид:</span> <strong id="profType">-</strong></div>
+                <div><span>Возраст:</span> <strong id="profAge">0 дней</strong></div>
+                <div><span>Выносливость:</span> <strong id="profStamina">Уровень 1</strong></div>
+                <div><span>Внимательность:</span> <strong id="profMindfulness">Уровень 1</strong></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = "https://lotfrhkjpxpqarewbrbd.supabase.co";
+        const SUPABASE_ANON_KEY = "sb_publishable_x2ent4T76KPAWYbdvks26A_SOh6VUja";
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let isSignUpMode = false;
+        let currentUser = null;
+        let selectedFishType = 'koi';
+        let selectedFishModel = '🐟';
+        
+        // Вся логика параметров уровней навыков
+        const levelCaps = { 1: 15, 2: 30, 3: 50, 4: 100, 5: 500, 6: 1500, 7: 3000, 8: 4000, 9: 5000 };
+
+        // Изначальный шаблон пустых игровых данных
+        let playerData = {
+            has_character: false, name: '', gender: '', fish_type: 'koi', fish_model: '🐟',
+            location: 'glass', cell_x: 4, cell_y: 4,
+            health: 100, hunger: 100, energy: 100, oxygen: 100,
+            stamina_lvl: 1, stamina_exp: 0, mindfulness_lvl: 1, mindfulness_exp: 0,
+            created_at: new Date().toISOString(), last_eat_time: null
+        };
+
+        // Настройки 4 локаций и их точек перехода
+        const locations = {
+            glass: { 
+                name: "🪟 Место у стекла", 
+                portals: [
+                    { x: 2, y: 2, dest: 'thickets', label: 'Заросли' },
+                    { x: 5, y: 8, dest: 'bottom', label: 'Дно' },
+                    { x: 7, y: 1, dest: 'surface', label: 'Поверхность' }
+                ]
+            },
+            thickets: { name: "🌿 Заросли", portals: [{ x: 4, y: 4, dest: 'glass', label: 'Место у стекла' }] },
+            bottom: { name: "⏳ Дно", portals: [{ x: 5, y: 1, dest: 'glass', label: 'Место у стекла' }] },
+            surface: { name: "🌊 Поверхность", portals: [{ x: 5, y: 8, dest: 'glass', label: 'Место у стекла' }] }
+        };
+
+        let currentTargetPortal = null;
+        let activeActionInterval = null;
+
+        // Переключение вида рыбки при создании
+        function selectFishType(type, model) {
+            selectedFishType = type;
+            selectedFishModel = model;
+            document.querySelectorAll('.fish-option').forEach(el => el.classList.remove('selected'));
+            if(type === 'koi') document.getElementById('iconKoi').parentElement.classList.add('selected');
+            if(type === 'som') document.getElementById('iconSom').parentElement.classList.add('selected');
+        }
+
+        // Элементы интерфейса
+        const authContainer = document.getElementById('authContainer');
+        const creationContainer = document.getElementById('creationContainer');
+        const gameInterface = document.getElementById('gameInterface');
+        const authToggleBtn = document.getElementById('authToggleBtn');
+        const authTitle = document.getElementById('authTitle');
+        const authSubmitBtn = document.getElementById('authSubmitBtn');
+        const authCodeInput = document.getElementById('authCode');
+
+        authToggleBtn.addEventListener('click', () => {
+            isSignUpMode = !isSignUpMode;
+            authTitle.innerText = isSignUpMode ? "Регистрация" : "Вход в Игру";
+            authSubmitBtn.innerText = isSignUpMode ? "Получить код / Создать" : "Войти";
+            authCodeInput.style.display = isSignUpMode ? "block" : "none";
+            authToggleBtn.innerText = isSignUpMode ? "Уже есть аккаунт? Войти" : "Ещё нет аккаунта? Зарегистрироваться";
+        });
+
+        // Вход / Регистрация
+        document.getElementById('authForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('authEmail').value;
+            const password = document.getElementById('authPassword').value;
+
+            if (isSignUpMode) {
+                const { data, error } = await supabase.auth.signUp({ email, password });
+                if (error) return alert("Ошибка: " + error.message);
+                alert("Аккаунт создан! Нажмите Войти для авторизации.");
+                isSignUpMode = false; authToggleBtn.click();
+            } else {
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                if (error) return alert("Ошибка входа: " + error.message);
+                checkUserSession();
+            }
+        });
+
+        // Создание рыбы
+        document.getElementById('creationForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            playerData.name = document.getElementById('fishName').value;
+            playerData.gender = document.getElementById('fishGender').value;
+            playerData.fish_type = selectedFishType;
+            playerData.fish_model = selectedFishModel;
+            playerData.has_character = true;
+            playerData.location = 'glass';
+            playerData.cell_x = 4; playerData.cell_y = 4;
+            playerData.health = 100; playerData.hunger = 100; playerData.energy = 100;
+
+            await savePlayerData();
+            creationContainer.style.display = 'none';
+            gameInterface.style.display = 'block';
+            renderMap();
+            updateUI();
+        });
+
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            await supabase.auth.signOut();
+            location.reload();
+        });
+
+        async function checkUserSession() {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                currentUser = user;
+                authContainer.style.display = 'none';
+                await loadOrCreateProfile();
+            } else {
+                authContainer.style.display = 'block';
+                gameInterface.style.display = 'none';
+                creationContainer.style.display = 'none';
+            }
+        }
+
+        async function loadOrCreateProfile() {
+            let { data, error } = await supabase.from('profiles').select('*').eq('id', currentUser.id).single();
+            if (!data) {
+                // Если записи нет вообще в бэкенде, создаём пустую заготовку
+                await supabase.from('profiles').insert({ id: currentUser.id, has_character: false });
+                creationContainer.style.display = 'block';
+            } else if (!data.has_character) {
+                creationContainer.style.display = 'block';
+            } else {
+                playerData = data;
+                gameInterface.style.display = 'block';
+                // Проверяем смерть от голода при входе
+                checkHungerDeath();
+                renderMap();
+                updateUI();
+            }
+        }
+
+        async function savePlayerData() {
+            if (!currentUser) return;
+            await supabase.from('profiles').update({
+                has_character: playerData.has_character,
+                name: playerData.name,
+                gender: playerData.gender,
+                fish_type: playerData.fish_type,
+                fish_model: playerData.fish_model,
+                location: playerData.location,
+                cell_x: playerData.cell_x,
+                cell_y: playerData.cell_y,
+                health: playerData.health,
+                hunger: playerData.hunger,
+                energy: playerData.energy,
+                oxygen: playerData.oxygen,
+                stamina_lvl: playerData.stamina_lvl,
+                stamina_exp: playerData.stamina_exp,
+                mindfulness_lvl: playerData.mindfulness_lvl,
+                mindfulness_exp: playerData.mindfulness_exp,
+                last_eat_time: playerData.last_eat_time
+            }).eq('id', currentUser.id);
+        }
+
+        // Отрисовка большой карты 10x10
+        function renderMap() {
+            const gridMap = document.getElementById('gridMap');
+            gridMap.innerHTML = '';
+            const loc = locations[playerData.location];
+
+            for (let y = 0; y < 10; y++) {
+                for (let x = 0; x < 10; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'grid-cell';
+
+                    // Отрисовка переходов на клетках
+                    const portal = loc.portals.find(p => p.x === x && p.y === y);
+                    if (portal) cell.classList.add('portal-cell');
+
+                    // Позиция игрока
+                    if (playerData.cell_x === x && playerData.cell_y === y) {
+                        cell.innerText = playerData.fish_model || '🐟';
+                    }
+
+                    // Перемещение на любую клетку
+                    cell.onclick = () => {
+                        if (activeActionInterval) return alert("Вы заняты выполнением действия!");
+                        playerData.cell_x = x;
+                        playerData.cell_y = y;
+                        renderMap();
+                        savePlayerData();
+
+                        // Если встали на клетку перехода
+                        if (portal) {
+                            currentTargetPortal = portal;
+                            document.getElementById('portalQueryText').innerText = `Перейти в локацию "${portal.label}"?`;
+                            document.getElementById('portalModal').style.display = 'flex';
+                        }
+                    };
+
+                    gridMap.appendChild(cell);
+                }
+            }
+        }
+
+        function closePortalModal() {
+            document.getElementById('portalModal').style.display = 'none';
+        }
+
+        async function confirmLocationSwitch() {
+            if (!currentTargetPortal) return;
+            playerData.location = currentTargetPortal.dest;
+            
+            // Находим точку спавна (обратный портал или центр по умолчанию)
+            const destLoc = locations[currentTargetPortal.dest];
+            const backPortal = destLoc.portals.find(p => p.dest === currentTargetPortal.src);
+            if (backPortal) {
+                playerData.cell_x = backPortal.x;
+                playerData.cell_y = backPortal.y;
+            } else {
+                playerData.cell_x = 4; playerData.cell_y = 4;
+            }
+            
+            closePortalModal();
+            renderMap();
+            updateUI();
+            await savePlayerData();
+        }
+
+        // Запуск длительных таймеров (3 минуты = 180 секунд)
+        function startTraining(skillType) {
+            if (activeActionInterval) return alert("Вы уже выполняете действие!");
+            
+            const cost = skillType === 'stamina' ? 15 : 5;
+            if (playerData.energy < cost) {
+                return alert("Слишком большая усталость! Действие недоступно.");
+            }
+
+            playerData.energy -= cost;
+            updateUI();
+            savePlayerData();
+
+            let timeLeft = 180; // 3 минуты
+            showProgressBar(timeLeft);
+
+            activeActionInterval = setInterval(async () => {
+                timeLeft--;
+                document.getElementById('actionTimer').innerText = formatTime(timeLeft);
+                if (timeLeft <= 0) {
+                    clearInterval(activeActionInterval);
+                    activeActionInterval = null;
+                    document.getElementById('actionProgressBox').style.display = 'none';
+                    
+                    // Добавление очка навыка
+                    addSkillExp(skillType);
+                    await savePlayerData();
+                    updateUI();
+                    alert("Действие завершено! Навык улучшен.");
+                }
+            }, 1000);
+        }
+
+        // Логика отдыха в локации Заросли
+        function startRest() {
+            if (activeActionInterval) return alert("Вы заняты!");
+            if (playerData.energy >= 100) return alert("Вы полны сил!");
+
+            let timeLeft = 30;
+            showProgressBar(timeLeft);
+
+            activeActionInterval = setInterval(async () => {
+                timeLeft--;
+                document.getElementById('actionTimer').innerText = formatTime(timeLeft);
+                if (timeLeft <= 0) {
+                    clearInterval(activeActionInterval);
+                    activeActionInterval = null;
+                    document.getElementById('actionProgressBox').style.display = 'none';
+                    
+                    playerData.energy = Math.min(100, playerData.energy + 5);
+                    await savePlayerData();
+                    updateUI();
+                    alert("Вы немного отдохнули и восстановили 5% бодрости!");
+                }
+            }, 1000);
+        }
+
+        // Искать остатки корма на Дне
+        async function searchFood() {
+            if (playerData.hunger >= 60) return alert("Вы не так голодны! (нужно меньше 60% голода)");
+            if (Math.random() < 0.5) {
+                playerData.hunger = Math.min(100, playerData.hunger + 5);
+                alert("Успех! Вы нашли немного остатков корма (+5% к сытости).");
+            } else {
+                alert("Вы тщательно искали, но ничего не нашли.");
+            }
+            await savePlayerData();
+            updateUI();
+        }
+
+        // Поесть корм на Поверхности (раз в 20 часов)
+        async function eatFood() {
+            const now = new Date();
+            if (playerData.last_eat_time) {
+                const diffMs = now - new Date(playerData.last_eat_time);
+                const diffHours = diffMs / (1000 * 60 * 60);
+                if (diffHours < 20) {
+                    const hoursLeft = Math.ceil(20 - diffHours);
+                    return alert(`Корм еще не появился! Попробуйте через ${hoursLeft} ч.`);
+                }
+            }
+
+            playerData.hunger = Math.min(100, playerData.hunger + 10);
+            playerData.last_eat_time = now.toISOString();
+            alert("Вы сытно поели свежего корма у поверхности! (+10% голода)");
+            await savePlayerData();
+            updateUI();
+        }
+
+        function addSkillExp(type) {
+            if (type === 'stamina') {
+                let cap = levelCaps[playerData.stamina_lvl];
+                if (!cap) { playerData.stamina_exp += 1; return; } // 10 уровень
+                playerData.stamina_exp += 1;
+                if (playerData.stamina_exp >= cap) {
+                    playerData.stamina_lvl += 1;
+                    playerData.stamina_exp = 0;
+                }
+            } else {
+                let cap = levelCaps[playerData.mindfulness_lvl];
+                if (!cap) { playerData.mindfulness_exp += 1; return; }
+                playerData.mindfulness_exp += 1;
+                if (playerData.mindfulness_exp >= cap) {
+                    playerData.mindfulness_lvl += 1;
+                    playerData.mindfulness_exp = 0;
+                }
+            }
+        }
+
+        function showProgressBar(seconds) {
+            document.getElementById('actionProgressBox').style.display = 'block';
+            document.getElementById('actionTimer').innerText = formatTime(seconds);
+        }
+
+        function formatTime(s) {
+            let m = Math.floor(s / 60); let sec = s % 60;
+            return `${m < 10 ? '0'+m : m}:${sec < 10 ? '0'+sec : sec}`;
+        }
+
+        function checkHungerDeath() {
+            if (playerData.hunger <= 0) {
+                playerData.health = 0;
+                alert("Ваша рыбка умерла от голода! Создайте новую.");
+                playerData.has_character = false;
+                savePlayerData().then(() => { location.reload(); });
+            }
+        }
+
+        function updateUI() {
+            document.getElementById('locationName').innerText = locations[playerData.location].name;
+            document.getElementById('statHealth').innerText = playerData.health + '%';
+            document.getElementById('statHunger').innerText = playerData.hunger + '%';
+            document.getElementById('statEnergy').innerText = playerData.energy + '%';
+            document.getElementById('statOxygen').innerText = playerData.oxygen + '%';
+
+            // Навыки UI
+            document.getElementById('staminaLvl').innerText = playerData.stamina_lvl;
+            let sCap = levelCaps[playerData.stamina_lvl] || '∞';
+            document.getElementById('staminaPoints').innerText = `${playerData.stamina_exp}/${sCap}`;
+            document.getElementById('staminaBar').style.width = sCap === '∞' ? '100%' : (playerData.stamina_exp / sCap * 100) + '%';
+
+            document.getElementById('mindfulnessLvl').innerText = playerData.mindfulness_lvl;
+            let mCap = levelCaps[playerData.mindfulness_lvl] || '∞';
+            document.getElementById('mindfulnessPoints').innerText = `${playerData.mindfulness_exp}/${mCap}`;
+            document.getElementById('mindfulnessBar').style.width = mCap === '∞' ? '100%' : (playerData.mindfulness_exp / mCap * 100) + '%';
+
+            // Видимость кнопок по локациям
+            document.getElementById('btnRest').style.display = playerData.location === 'thickets' ? 'block' : 'none';
+            document.getElementById('btnSearchFood').style.display = playerData.location === 'bottom' ? 'block' : 'none';
+            document.getElementById('btnEatFood').style.display = playerData.location === 'surface' ? 'block' : 'none';
+        }
+
+        function openProfile() {
+            const ageDays = Math.floor((new Date() - new Date(playerData.created_at)) / (1000 * 60 * 60 * 24));
+            document.getElementById('profileAvatar').innerText = playerData.fish_model;
+            document.getElementById('profNameTitle').innerText = playerData.name;
+            document.getElementById('profName').innerText = playerData.name;
+            document.getElementById('profGender').innerText = playerData.gender;
+            document.getElementById('profType').innerText = playerData.fish_type === 'koi' ? 'Кои' : 'Сом';
+            document.getElementById('profAge').innerText = ageDays + " дней";
+            document.getElementById('profStamina').innerText = "Уровень " + playerData.stamina_lvl;
+            document.getElementById('profMindfulness').innerText = "Уровень " + playerData.mindfulness_lvl;
+            document.getElementById('profileModal').style.display = 'flex';
+        }
+
+        function closeProfile() {
+            document.getElementById('profileModal').style.display = 'none';
+        }
+
+        // Симуляция падения голода (-5% каждые 5 часов)
+        setInterval(() => {
+            if (currentUser && playerData.has_character) {
+                playerData.hunger = Math.max(0, playerData.hunger - 5);
+                checkHungerDeath();
+                updateUI();
+                savePlayerData();
+            }
+        }, 5 * 60 * 60 * 1000);
+
+        checkUserSession();
+    </script>
+</body>
+</html>
